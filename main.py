@@ -203,60 +203,97 @@ def parse_btn(text):
     if temp: rows.append(temp)
     return InlineKeyboardMarkup(rows), clean_text
 
-async def broadcast_logic(user_id, msg):
+# --- IMPROVED BROADCAST SYSTEM (FIXED HTML & GROUP SUPPORT) ---
+
+async def broadcast_logic(chat_id, msg):
+    """Handles broadcasting to both Users and Groups with full HTML support"""
     try:
+        # If it's a reply, use copy_message to preserve media and HTML entities
         if msg.reply_to_message:
             reply = msg.reply_to_message
-            # Handle Custom Caption
+            
+            # Check if owner provided a custom caption with the command
             if len(msg.command) > 1:
-                raw_cap = msg.text.split(" ", 1)[1]
+                # Re-extracting the raw text to keep HTML tags intact
+                full_text = msg.text.html if msg.text.html else msg.text
+                raw_cap = full_text.split(None, 1)[1]
                 markup, clean_cap = parse_btn(raw_cap)
             else:
-                clean_cap = reply.caption or ""
+                # Use original message's HTML caption/text
+                clean_cap = reply.caption.html if reply.caption else (reply.text.html if reply.text else "")
                 markup = reply.reply_markup
             
-            await reply.copy(chat_id=user_id, caption=clean_cap, reply_markup=markup)
+            await bot.copy_message(
+                chat_id=chat_id,
+                from_chat_id=msg.chat.id,
+                message_id=reply.id,
+                caption=clean_cap,
+                reply_markup=markup,
+                parse_mode=enums.ParseMode.HTML
+            )
         else:
-            raw_txt = msg.text.split(" ", 1)[1]
+            # Simple text broadcast from the command itself
+            full_text = msg.text.html if msg.text.html else msg.text
+            raw_txt = full_text.split(None, 1)[1]
             markup, clean_txt = parse_btn(raw_txt)
-            await bot.send_message(chat_id=user_id, text=clean_txt, reply_markup=markup, disable_web_page_preview=True)
+            
+            await bot.send_message(
+                chat_id=chat_id,
+                text=clean_txt,
+                reply_markup=markup,
+                parse_mode=enums.ParseMode.HTML,
+                disable_web_page_preview=True
+            )
         return "OK"
     except FloodWait as e:
         await asyncio.sleep(e.value)
-        return await broadcast_logic(user_id, msg)
+        return await broadcast_logic(chat_id, msg)
     except (InputUserDeactivated, UserIsBlocked, PeerIdInvalid):
-        await remove_user(user_id)
+        await remove_user(chat_id)
         return "BLOCK"
-    except Exception:
+    except Exception as e:
+        logger.error(f"Broadcast Error for {chat_id}: {e}")
         return "FAIL"
 
 @bot.on_message(filters.command("broadcast") & filters.user(OWNER_IDS))
 async def broadcast_handler(client, message):
     if not message.reply_to_message and len(message.command) < 2:
-        return await message.reply_text("<b>⚠️ Format:</b> Reply or `/broadcast Text [Btn|Url]`")
+        return await message.reply_text("<b>⚠️ Usage:</b> Reply to a message or use <code>/broadcast Text [Btn|Url]</code>")
 
     status = await message.reply_text("<b>🚀 ʙʀᴏᴀᴅᴄᴀsᴛ sᴛᴀʀᴛɪɴɢ...</b>")
-    users = await get_all_ids(users_col)
     
+    # Fetching both Users and Groups from DB
+    users = await get_all_ids(users_col)
+    chats = await get_all_ids(chats_col)
+    all_targets = list(set(users + chats)) # Combining both and removing duplicates
+    
+    total = len(all_targets)
     stats = {"OK": 0, "BLOCK": 0, "FAIL": 0}
     
-    for i, user_id in enumerate(users):
-        res = await broadcast_logic(user_id, message)
+    for i, chat_id in enumerate(all_targets):
+        res = await broadcast_logic(chat_id, message)
         stats[res] += 1
         
-        # Update status every 20 users
-        if (i + 1) % 20 == 0:
+        # UI update every 15 targets
+        if (i + 1) % 15 == 0 or (i + 1) == total:
             try:
-                await status.edit_text(f"<b>🚀 sᴇɴᴅɪɴɢ... {i+1}/{len(users)}</b>\n✅ {stats['OK']} | 🚫 {stats['BLOCK']} | ❌ {stats['FAIL']}")
+                await status.edit_text(
+                    f"<b>🚀 ʙʀᴏᴀᴅᴄᴀsᴛɪɴɢ...</b>\n\n"
+                    f"<b>📊 Progress:</b> <code>{i+1}/{total}</code>\n"
+                    f"<b>✅ Success:</b> <code>{stats['OK']}</code>\n"
+                    f"<b>🚫 Blocked:</b> <code>{stats['BLOCK']}</code>\n"
+                    f"<b>❌ Failed:</b> <code>{stats['FAIL']}</code>"
+                )
             except: pass
 
     await status.edit_text(
         f"""
-<b>✅ ʙʀᴏᴀᴅᴄᴀsᴛ ғɪɴɪsʜᴇᴅ</b>
+<b>✅ ʙʀᴏᴀᴅᴄᴀsᴛ ᴄᴏᴍᴘʟᴇᴛᴇᴅ</b>
 ━━━━━━━━━━━━━━━━━
-📨 <b>sᴇɴᴛ:</b> {stats['OK']}
-🚫 <b>ʀᴇᴍᴏᴠᴇᴅ:</b> {stats['BLOCK']}
-❌ <b>ғᴀɪʟᴇᴅ:</b> {stats['FAIL']}
+👤 <b>ᴛᴏᴛᴀʟ ᴛᴀʀɢᴇᴛs:</b> {total}
+📨 <b>sᴇɴᴛ sᴜᴄᴄᴇss:</b> {stats['OK']}
+🚫 <b>ʀᴇᴍᴏᴠᴇᴅ/ʙʟᴏᴄᴋᴇᴅ:</b> {stats['BLOCK']}
+❌ <b>ғᴀɪʟᴇᴅ/ᴇʀʀᴏʀ:</b> {stats['FAIL']}
 ━━━━━━━━━━━━━━━━━
 """
     )

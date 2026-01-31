@@ -3,6 +3,4 @@ tgcrypto
 motor
 dnspython
 flask
-apscheduler
 requests
-aiohttp

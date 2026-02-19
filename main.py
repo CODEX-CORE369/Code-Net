@@ -60,36 +60,38 @@ t1.start()
 t2 = threading.Thread(target=keep_alive)
 t2.start()
 
-# --- DATABASE LOGIC (OPTIMIZED) ---
+# --- DATABASE LOGIC (OPTIMIZED & UPDATED WITH NAMES) ---
 mongo = AsyncIOMotorClient(MONGO_URL)
 db = mongo[DB_NAME]
 users_col = db["users"]
 chats_col = db["chats"]
 
-async def add_user(user_id):
+async def add_user(user_id, name="Unknown"):
     """Upsert user to DB (Faster & Safer)"""
     try:
         await users_col.update_one(
             {"user_id": user_id},
-            {"$set": {"user_id": user_id}},
+            {"$set": {"user_id": user_id, "name": name}},
             upsert=True
         )
     except Exception as e:
         logger.error(f"DB Error (User): {e}")
 
-async def add_chat(chat_id):
+async def add_chat(chat_id, name="Unknown Group"):
     """Upsert group to DB"""
     try:
         await chats_col.update_one(
             {"chat_id": chat_id},
-            {"$set": {"chat_id": chat_id}},
+            {"$set": {"chat_id": chat_id, "name": name}},
             upsert=True
         )
     except Exception as e:
         logger.error(f"DB Error (Chat): {e}")
 
-async def remove_user(user_id):
-    await users_col.delete_one({"user_id": user_id})
+async def remove_target(target_id):
+    """Safely remove a user or group if blocked/kicked"""
+    await users_col.delete_one({"user_id": target_id})
+    await chats_col.delete_one({"chat_id": target_id})
 
 async def get_all_ids(collection):
     return [doc["user_id"] if "user_id" in doc else doc["chat_id"] async for doc in collection.find()]
@@ -113,9 +115,9 @@ bot = Client(
 @bot.on_message(filters.command("start") & filters.private)
 async def start_handler(client, message):
     user = message.from_user
-    await add_user(user.id)
-    
     fname = user.first_name if user.first_name else "User"
+    await add_user(user.id, fname)
+    
     fancy_name = to_fancy(fname)
     
     # Notification Trigger (Hidden Mention)
@@ -151,25 +153,115 @@ async def start_handler(client, message):
         disable_web_page_preview=True
     )
 
-# --- SERVICE MESSAGE REMOVER ---
+# --- SERVICE MESSAGE REMOVER & GROUP WELCOME LOGIC ---
 @bot.on_message(filters.service & filters.group)
 async def delete_service(client, message):
-    await add_chat(message.chat.id)
+    chat_title = message.chat.title if message.chat.title else "Unknown Group"
+    await add_chat(message.chat.id, chat_title)
+    
+    # When Bot is added to a new group
+    if message.new_chat_members:
+        me = await client.get_me()
+        for member in message.new_chat_members:
+            if member.id == me.id:
+                member_info = await client.get_chat_member(message.chat.id, me.id)
+                # Checking if bot has delete messages permission
+                if member_info.privileges and member_info.privileges.can_delete_messages:
+                    welcome_text = f"""
+<b>┏━━「 ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ɢʀᴏᴜᴘ 」━━┓
+┃
+┃ 👋 ʜᴇʟʟᴏ! I am ready to keep 
+┃ <b>{chat_title}</b> clean.
+┃ 
+┃ 📌 <b>ᴍʏ ғᴇᴀᴛᴜʀᴇs:</b>
+┃ ┣ 🗑 ᴅᴇʟᴇᴛᴇ ᴊᴏɪɴ/ʟᴇᴀᴠᴇ ᴍsɢ
+┃ ┣ 📌 ᴅᴇʟᴇᴛᴇ ᴘɪɴ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴs
+┃ ┣ ⏳ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ᴛɪᴍᴇʀ ʟᴏɢs
+┃ ┗ 🔊 ᴠᴏɪᴄᴇ ᴄʜᴀᴛ ʟᴏɢs ᴄʟᴇᴀɴᴇʀ
+┃
+┃ ✅ <b>sᴛᴀᴛᴜs:</b> ᴀᴄᴛɪᴠᴇ & ᴀᴅᴍɪɴ
+┗━━━━━━━━━━━━━━━━━━┛</b>
+"""
+                    await message.reply_text(welcome_text, parse_mode=enums.ParseMode.HTML)
+                else:
+                    warning_text = f"""
+<b>┏━━「 ⚠️ ᴀᴛᴛᴇɴᴛɪᴏɴ ɴᴇᴇᴅᴇᴅ 」━━┓
+┃
+┃ ❌ I don't have enough permissions
+┃ in <b>{chat_title}</b>!
+┃ 
+┃ ⚙️ <b>ʀᴇǫᴜɪʀᴇᴅ ᴘᴇʀᴍɪssɪᴏɴs:</b>
+┃ ┣ 🗑 ᴅᴇʟᴇᴛᴇ ᴍᴇssᴀɢᴇs
+┃ ┗ 👥 ɪɴᴠɪᴛᴇ ᴜsᴇʀs
+┃
+┃ 👇 ᴘʟᴇᴀsᴇ ᴘʀᴏᴍᴏᴛᴇ ᴍᴇ ᴜsɪɴɢ 
+┃ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟᴏᴡ.
+┗━━━━━━━━━━━━━━━━━━┛</b>
+"""
+                    btn = InlineKeyboardMarkup([[InlineKeyboardButton("👑 ᴘʀᴏᴍᴏᴛᴇ ᴀs ᴀᴅᴍɪɴ 👑", url=f"https://t.me/{me.username}?startgroup=true&admin=delete_messages+invite_users")]])
+                    warn_msg = await message.reply_text(warning_text, reply_markup=btn, parse_mode=enums.ParseMode.HTML)
+                    
+                    # Saving warning message id to delete it later when promoted
+                    await chats_col.update_one({"chat_id": message.chat.id}, {"$set": {"warning_msg_id": warn_msg.id}}, upsert=True)
+
+    # Delete the service message
     try:
         await message.delete()
     except Exception:
         pass # Bot doesn't have delete permission
 
-# --- STATS COMMAND ---
+# --- CHAT MEMBER UPDATED (PROMOTION DETECTOR) ---
+@bot.on_chat_member_updated(filters.group)
+async def chat_member_update(client, chat_member_updated):
+    me = await client.get_me()
+    
+    if chat_member_updated.new_chat_member and chat_member_updated.new_chat_member.user.id == me.id:
+        new_status = chat_member_updated.new_chat_member.status
+        old_status = chat_member_updated.old_chat_member.status if chat_member_updated.old_chat_member else None
+        
+        # If bot was promoted to Admin
+        if new_status == enums.ChatMemberStatus.ADMINISTRATOR and old_status != enums.ChatMemberStatus.ADMINISTRATOR:
+            chat_id = chat_member_updated.chat.id
+            chat_title = chat_member_updated.chat.title
+            
+            # Delete old warning message if exists
+            chat_data = await chats_col.find_one({"chat_id": chat_id})
+            if chat_data and "warning_msg_id" in chat_data:
+                try:
+                    await client.delete_messages(chat_id, chat_data["warning_msg_id"])
+                    await chats_col.update_one({"chat_id": chat_id}, {"$unset": {"warning_msg_id": ""}})
+                except:
+                    pass
+            
+            # Send Final Welcome
+            welcome_text = f"""
+<b>┏━━「 ᴘᴇʀᴍɪssɪᴏɴ ɢʀᴀɴᴛᴇᴅ 」━━┓
+┃
+┃ ✅ Thank you for promoting me!
+┃ 
+┃ 🗑 Now I will automatically delete:
+┃ ┣ 📌 Pinned/Join/Leave Messages
+┃ ┣ ⏳ Auto-Delete Timer Logs
+┃ ┗ 🔊 Voice Chat Logs
+┃
+┃ 🚀 Ready to keep <b>{chat_title}</b> clean!
+┗━━━━━━━━━━━━━━━━━━┛</b>
+"""
+            await client.send_message(chat_id, welcome_text, parse_mode=enums.ParseMode.HTML)
+
+# --- STATS COMMAND (UPDATED WITH NAMES) ---
 @bot.on_message(filters.command("users") & filters.user(OWNER_IDS))
 async def stats_handler(client, message):
     status = await message.reply_text("<b>♻️ ᴘʀᴏᴄᴇssɪɴɢ ᴅᴀᴛᴀʙᴀsᴇ...</b>")
     
-    users = await get_all_ids(users_col)
-    chats = await get_all_ids(chats_col)
+    users = [f"{doc.get('user_id')} | {doc.get('name', 'Unknown')}" async for doc in users_col.find()]
+    chats = [f"{doc.get('chat_id')} | {doc.get('name', 'Unknown')}" async for doc in chats_col.find()]
     
-    # File Generation
-    out_text = f"--- DX BOT DATABASE ---\n\nTOTAL USERS: {len(users)}\nTOTAL GROUPS: {len(chats)}\n\n--- USER LIST ---\n" + "\n".join(str(u) for u in users)
+    # File Generation with both Users and Groups Names
+    out_text = f"--- DX BOT DATABASE ---\n\nTOTAL USERS: {len(users)}\nTOTAL GROUPS: {len(chats)}\n\n--- USER LIST ---\n"
+    out_text += "\n".join(users)
+    out_text += "\n\n--- GROUP LIST ---\n"
+    out_text += "\n".join(chats)
     
     bio = io.BytesIO(out_text.encode('utf-8'))
     bio.name = "DX_Database.txt"
@@ -215,7 +307,7 @@ async def broadcast_logic(chat_id, msg):
             # Check if owner provided a custom caption with the command
             if len(msg.command) > 1:
                 # Re-extracting the raw text to keep HTML tags intact
-                full_text = msg.text.html if msg.text.html else msg.text
+                full_text = msg.text.html if msg.text and msg.text.html else msg.text
                 raw_cap = full_text.split(None, 1)[1]
                 markup, clean_cap = parse_btn(raw_cap)
             else:
@@ -233,7 +325,7 @@ async def broadcast_logic(chat_id, msg):
             )
         else:
             # Simple text broadcast from the command itself
-            full_text = msg.text.html if msg.text.html else msg.text
+            full_text = msg.text.html if msg.text and msg.text.html else msg.text
             raw_txt = full_text.split(None, 1)[1]
             markup, clean_txt = parse_btn(raw_txt)
             
@@ -249,7 +341,7 @@ async def broadcast_logic(chat_id, msg):
         await asyncio.sleep(e.value)
         return await broadcast_logic(chat_id, msg)
     except (InputUserDeactivated, UserIsBlocked, PeerIdInvalid):
-        await remove_user(chat_id)
+        await remove_target(chat_id) # Fixed to remove from both DBs appropriately
         return "BLOCK"
     except Exception as e:
         logger.error(f"Broadcast Error for {chat_id}: {e}")

@@ -4,5 +4,5 @@ flask
 requests
 motor
 dnspython
-pymongo==4.10.1
+pyrogram==2.0.106
 asyncio

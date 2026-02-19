@@ -4,5 +4,5 @@ flask
 requests
 motor
 dnspython
-pymongo[srv]
+pymongo==4.10.1
 asyncio

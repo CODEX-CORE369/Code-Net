@@ -1,8 +1,6 @@
 pyrogram
 tgcrypto
-motor
-pymongo
-dnspython
 flask
 requests
-gunicorn
+motor
+pymongo

@@ -54,10 +54,10 @@ def keep_alive():
         except Exception as e:
             logger.error(f"Ping Failed: {e}")
 
-# Start Background Threads
-t1 = threading.Thread(target=run_flask)
+# Start Background Threads (Fixed with daemon=True to prevent hanging)
+t1 = threading.Thread(target=run_flask, daemon=True)
 t1.start()
-t2 = threading.Thread(target=keep_alive)
+t2 = threading.Thread(target=keep_alive, daemon=True)
 t2.start()
 
 # --- DATABASE LOGIC (OPTIMIZED & UPDATED WITH NAMES) ---
@@ -94,7 +94,14 @@ async def remove_target(target_id):
     await chats_col.delete_one({"chat_id": target_id})
 
 async def get_all_ids(collection):
-    return [doc["user_id"] if "user_id" in doc else doc["chat_id"] async for doc in collection.find()]
+    # Fixed async comprehension for maximum compatibility
+    ids = []
+    async for doc in collection.find():
+        if "user_id" in doc:
+            ids.append(doc["user_id"])
+        elif "chat_id" in doc:
+            ids.append(doc["chat_id"])
+    return ids
 
 # --- FANCY FONT ENGINE ---
 def to_fancy(text):
@@ -104,11 +111,13 @@ def to_fancy(text):
     return text.translate(table)
 
 # --- BOT CLIENT ---
+# Added in_memory=True to prevent sqlite database lock errors on Render
 bot = Client(
     "DxServiceRemover",
     api_id=API_ID,
     api_hash=API_HASH,
-    bot_token=BOT_TOKEN
+    bot_token=BOT_TOKEN,
+    in_memory=True
 )
 
 # --- START HANDLER ---
@@ -116,9 +125,12 @@ bot = Client(
 async def start_handler(client, message):
     user = message.from_user
     fname = user.first_name if user.first_name else "User"
-    await add_user(user.id, fname)
     
-    fancy_name = to_fancy(fname)
+    # Preventing HTML parse errors
+    fname_safe = fname.replace("<", "&lt;").replace(">", "&gt;").replace("&", "&amp;")
+    await add_user(user.id, fname_safe)
+    
+    fancy_name = to_fancy(fname_safe)
     
     # Notification Trigger (Hidden Mention)
     mention = f"<a href='tg://user?id={user.id}'>{fancy_name}</a>"
@@ -157,7 +169,10 @@ async def start_handler(client, message):
 @bot.on_message(filters.service & filters.group)
 async def delete_service(client, message):
     chat_title = message.chat.title if message.chat.title else "Unknown Group"
-    await add_chat(message.chat.id, chat_title)
+    # Preventing HTML parse errors for group titles
+    chat_title_safe = chat_title.replace("<", "&lt;").replace(">", "&gt;").replace("&", "&amp;")
+    
+    await add_chat(message.chat.id, chat_title_safe)
     
     # When Bot is added to a new group
     if message.new_chat_members:
@@ -171,7 +186,7 @@ async def delete_service(client, message):
 <b>┏━━「 ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ɢʀᴏᴜᴘ 」━━┓
 ┃
 ┃ 👋 ʜᴇʟʟᴏ! I am ready to keep 
-┃ <b>{chat_title}</b> clean.
+┃ <b>{chat_title_safe}</b> clean.
 ┃ 
 ┃ 📌 <b>ᴍʏ ғᴇᴀᴛᴜʀᴇs:</b>
 ┃ ┣ 🗑 ᴅᴇʟᴇᴛᴇ ᴊᴏɪɴ/ʟᴇᴀᴠᴇ ᴍsɢ
@@ -188,7 +203,7 @@ async def delete_service(client, message):
 <b>┏━━「 ⚠️ ᴀᴛᴛᴇɴᴛɪᴏɴ ɴᴇᴇᴅᴇᴅ 」━━┓
 ┃
 ┃ ❌ I don't have enough permissions
-┃ in <b>{chat_title}</b>!
+┃ in <b>{chat_title_safe}</b>!
 ┃ 
 ┃ ⚙️ <b>ʀᴇǫᴜɪʀᴇᴅ ᴘᴇʀᴍɪssɪᴏɴs:</b>
 ┃ ┣ 🗑 ᴅᴇʟᴇᴛᴇ ᴍᴇssᴀɢᴇs
@@ -222,7 +237,8 @@ async def chat_member_update(client, chat_member_updated):
         # If bot was promoted to Admin
         if new_status == enums.ChatMemberStatus.ADMINISTRATOR and old_status != enums.ChatMemberStatus.ADMINISTRATOR:
             chat_id = chat_member_updated.chat.id
-            chat_title = chat_member_updated.chat.title
+            chat_title = chat_member_updated.chat.title if chat_member_updated.chat.title else "Unknown Group"
+            chat_title_safe = chat_title.replace("<", "&lt;").replace(">", "&gt;").replace("&", "&amp;")
             
             # Delete old warning message if exists
             chat_data = await chats_col.find_one({"chat_id": chat_id})
@@ -244,7 +260,7 @@ async def chat_member_update(client, chat_member_updated):
 ┃ ┣ ⏳ Auto-Delete Timer Logs
 ┃ ┗ 🔊 Voice Chat Logs
 ┃
-┃ 🚀 Ready to keep <b>{chat_title}</b> clean!
+┃ 🚀 Ready to keep <b>{chat_title_safe}</b> clean!
 ┗━━━━━━━━━━━━━━━━━━┛</b>
 """
             await client.send_message(chat_id, welcome_text, parse_mode=enums.ParseMode.HTML)
@@ -254,8 +270,14 @@ async def chat_member_update(client, chat_member_updated):
 async def stats_handler(client, message):
     status = await message.reply_text("<b>♻️ ᴘʀᴏᴄᴇssɪɴɢ ᴅᴀᴛᴀʙᴀsᴇ...</b>")
     
-    users = [f"{doc.get('user_id')} | {doc.get('name', 'Unknown')}" async for doc in users_col.find()]
-    chats = [f"{doc.get('chat_id')} | {doc.get('name', 'Unknown')}" async for doc in chats_col.find()]
+    # Fixed async list creation for best compatibility
+    users = []
+    async for doc in users_col.find():
+        users.append(f"{doc.get('user_id')} | {doc.get('name', 'Unknown')}")
+        
+    chats = []
+    async for doc in chats_col.find():
+        chats.append(f"{doc.get('chat_id')} | {doc.get('name', 'Unknown')}")
     
     # File Generation with both Users and Groups Names
     out_text = f"--- DX BOT DATABASE ---\n\nTOTAL USERS: {len(users)}\nTOTAL GROUPS: {len(chats)}\n\n--- USER LIST ---\n"

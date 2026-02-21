@@ -1,8 +1,8 @@
 pyrogram
 tgcrypto
+motor
+pymongo
+dnspython
 flask
 requests
-motor
-dnspython
-pyrogram==2.0.106
-asyncio
+gunicorn

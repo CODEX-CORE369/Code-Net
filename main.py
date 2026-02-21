@@ -26,7 +26,7 @@ MONGO_URL = "mongodb+srv://dxsimu:mnbvcxzdx@dxsimu.0qrxmsr.mongodb.net/?appName=
 DB_NAME = "DX-REMOVE"
 
 # Keep Alive URL
-PING_URL = "https://code-net-4zje.onrender.com"
+PING_URL = "https://code-net-iwtu.onrender.com"
 
 # --- LOGGING SETUP ---
 logging.basicConfig(level=logging.INFO)

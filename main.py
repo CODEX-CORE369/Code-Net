@@ -195,7 +195,7 @@ async def delete_service(client, message):
 ┃ ┗ 🔊 ᴠᴏɪᴄᴇ ᴄʜᴀᴛ ʟᴏɢs ᴄʟᴇᴀɴᴇʀ
 ┃
 ┃ ✅ <b>sᴛᴀᴛᴜs:</b> ᴀᴄᴛɪᴠᴇ & ᴀᴅᴍɪɴ
-┗━━━━━━━━━━━━━━━━━━┛</b>
+┗━━━━━━━━━━━━━━━━┛</b>
 """
                     await message.reply_text(welcome_text, parse_mode=enums.ParseMode.HTML)
                 else:
@@ -211,7 +211,7 @@ async def delete_service(client, message):
 ┃
 ┃ 👇 ᴘʟᴇᴀsᴇ ᴘʀᴏᴍᴏᴛᴇ ᴍᴇ ᴜsɪɴɢ 
 ┃ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟᴏᴡ.
-┗━━━━━━━━━━━━━━━━━━┛</b>
+┗━━━━━━━━━━━━━━━━┛</b>
 """
                     btn = InlineKeyboardMarkup([[InlineKeyboardButton("👑 ᴘʀᴏᴍᴏᴛᴇ ᴀs ᴀᴅᴍɪɴ 👑", url=f"https://t.me/{me.username}?startgroup=true&admin=delete_messages+invite_users")]])
                     warn_msg = await message.reply_text(warning_text, reply_markup=btn, parse_mode=enums.ParseMode.HTML)
@@ -261,7 +261,7 @@ async def chat_member_update(client, chat_member_updated):
 ┃ ┗ 🔊 ᴠᴏɪᴄᴇ ᴄʜᴀᴛ ʟᴏɢs
 ┃
 ┃ 🚀 ʀᴇᴀᴅʏ ᴛᴏ ᴋᴇᴇᴘ <b>{chat_title_safe}</b> ᴄʟᴇᴀɴ!
-┗━━━━━━━━━━━━━━━━━━┛</b>
+┗━━━━━━━━━━━━━━━━┛</b>
 """
             await client.send_message(chat_id, welcome_text, parse_mode=enums.ParseMode.HTML)
 

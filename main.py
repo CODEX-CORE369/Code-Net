@@ -306,13 +306,13 @@ async def broadcast_logic(chat_id, msg):
             
             # Check if owner provided a custom caption with the command
             if len(msg.command) > 1:
-                # Re-extracting the raw text to keep HTML tags intact
-                full_text = msg.text.html if msg.text and msg.text.html else msg.text
-                raw_cap = full_text.split(None, 1)[1]
+                # Re-extracting the raw text to keep HTML tags intact safely
+                full_text = getattr(msg.text, "html", msg.text) if msg.text else ""
+                raw_cap = full_text.split(None, 1)[1] if len(full_text.split(None, 1)) > 1 else ""
                 markup, clean_cap = parse_btn(raw_cap)
             else:
-                # Use original message's HTML caption/text
-                clean_cap = reply.caption.html if reply.caption else (reply.text.html if reply.text else "")
+                # Use original message's HTML caption/text safely
+                clean_cap = getattr(reply.caption, "html", reply.caption) if reply.caption else (getattr(reply.text, "html", reply.text) if reply.text else "")
                 markup = reply.reply_markup
             
             await bot.copy_message(
@@ -324,9 +324,9 @@ async def broadcast_logic(chat_id, msg):
                 parse_mode=enums.ParseMode.HTML
             )
         else:
-            # Simple text broadcast from the command itself
-            full_text = msg.text.html if msg.text and msg.text.html else msg.text
-            raw_txt = full_text.split(None, 1)[1]
+            # Simple text broadcast from the command itself safely
+            full_text = getattr(msg.text, "html", msg.text) if msg.text else ""
+            raw_txt = full_text.split(None, 1)[1] if len(full_text.split(None, 1)) > 1 else ""
             markup, clean_txt = parse_btn(raw_txt)
             
             await bot.send_message(

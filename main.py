@@ -185,8 +185,8 @@ async def delete_service(client, message):
                     welcome_text = f"""
 <b>┏━━「 ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ɢʀᴏᴜᴘ 」━━┓
 ┃
-┃ 👋 ʜᴇʟʟᴏ! I am ready to keep 
-┃ <b>{chat_title_safe}</b> clean.
+┃ 👋 ʜᴇʟʟᴏ! ɪ ᴀᴍ ʀᴇᴀᴅʏ ᴛᴏ ᴋᴇᴇᴘ
+┃ <b>{chat_title_safe}</b> ᴄʟᴇᴀɴ.
 ┃ 
 ┃ 📌 <b>ᴍʏ ғᴇᴀᴛᴜʀᴇs:</b>
 ┃ ┣ 🗑 ᴅᴇʟᴇᴛᴇ ᴊᴏɪɴ/ʟᴇᴀᴠᴇ ᴍsɢ
@@ -202,7 +202,7 @@ async def delete_service(client, message):
                     warning_text = f"""
 <b>┏━━「 ⚠️ ᴀᴛᴛᴇɴᴛɪᴏɴ ɴᴇᴇᴅᴇᴅ 」━━┓
 ┃
-┃ ❌ I don't have enough permissions
+┃ ❌ ɪ ᴅᴏɴ'ᴛ ʜᴀᴠᴇ ᴇɴᴏᴜɢʜ ᴘᴇʀᴍɪssɪᴏɴs
 ┃ in <b>{chat_title_safe}</b>!
 ┃ 
 ┃ ⚙️ <b>ʀᴇǫᴜɪʀᴇᴅ ᴘᴇʀᴍɪssɪᴏɴs:</b>
@@ -253,14 +253,14 @@ async def chat_member_update(client, chat_member_updated):
             welcome_text = f"""
 <b>┏━━「 ᴘᴇʀᴍɪssɪᴏɴ ɢʀᴀɴᴛᴇᴅ 」━━┓
 ┃
-┃ ✅ Thank you for promoting me!
+┃ ✅ ᴛʜᴀɴᴋ ʏᴏᴜ ғᴏʀ ᴘʀᴏᴍᴏᴛɪɴɢ ᴍᴇ!
 ┃ 
-┃ 🗑 Now I will automatically delete:
-┃ ┣ 📌 Pinned/Join/Leave Messages
-┃ ┣ ⏳ Auto-Delete Timer Logs
-┃ ┗ 🔊 Voice Chat Logs
+┃ 🗑 ɴᴏᴡ ɪ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴅᴇʟᴇᴛᴇ:
+┃ ┣ 📌 ᴘɪɴɴᴇᴅ/ɪᴏɪɴ/ʟᴇᴀᴠᴇ ᴍᴇssᴀɢᴇs
+┃ ┣ ⏳ ᴀᴜᴛᴏ-ᴅᴇʟᴇᴛᴇ ᴛɪᴍᴇʀ ʟᴏɢs
+┃ ┗ 🔊 ᴠᴏɪᴄᴇ ᴄʜᴀᴛ ʟᴏɢs
 ┃
-┃ 🚀 Ready to keep <b>{chat_title_safe}</b> clean!
+┃ 🚀 ʀᴇᴀᴅʏ ᴛᴏ ᴋᴇᴇᴘ <b>{chat_title_safe}</b> ᴄʟᴇᴀɴ!
 ┗━━━━━━━━━━━━━━━━━━┛</b>
 """
             await client.send_message(chat_id, welcome_text, parse_mode=enums.ParseMode.HTML)

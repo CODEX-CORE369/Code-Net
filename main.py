@@ -157,7 +157,35 @@ async def start_handler(client, message):
     )
 
 # --- SERVICE MESSAGE REMOVER & GROUP WELCOME LOGIC ---
-@bot.on_message((filters.service | filters.pinned_message | filters.new_chat_members | filters.left_chat_member) & filters.group)
+@bot.on_message(
+    (
+        filters.service | 
+        filters.pinned_message | 
+        filters.new_chat_members | 
+        filters.left_chat_member | 
+        filters.chat_joined_by_request | 
+        filters.video_chat_started | 
+        filters.video_chat_ended | 
+        filters.video_chat_members_invited | 
+        filters.video_chat_scheduled | 
+        filters.message_auto_delete_timer_changed |
+        filters.forum_topic_created |
+        filters.forum_topic_closed |
+        filters.forum_topic_reopened |
+        filters.forum_topic_edited |
+        filters.general_forum_topic_hidden |
+        filters.general_forum_topic_unhidden |
+        filters.giveaway_created |
+        filters.giveaway_winners_announced |
+        filters.boost_added |
+        filters.successful_payment |
+        filters.refunded_payment |
+        filters.proximity_alert_triggered |
+        filters.write_access_allowed |
+        filters.migrate_to_chat_id |
+        filters.migrate_from_chat_id
+    ) & filters.group
+    )
 async def delete_service(client, message):
     chat_title = message.chat.title if message.chat.title else "Unknown Group"
     chat_title_safe = chat_title.replace("<", "&lt;").replace(">", "&gt;").replace("&", "&amp;")

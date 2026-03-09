@@ -1,14 +1,6 @@
 import os
 import re
 import asyncio
-
-# --- FIX FOR RENDER & PYTHON 3.10+ ---
-try:
-    asyncio.get_event_loop()
-except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
-# -------------------------------------
-
 import time
 import io
 import threading
@@ -60,17 +52,11 @@ def keep_alive():
             print(f"[{B}] Ping failed: {e}")
         time.sleep(300)
 
-# Start Background Threads
-t1 = threading.Thread(target=run_flask, daemon=True)
-t1.start()
-t2 = threading.Thread(target=keep_alive, daemon=True)
-t2.start()
-
-# --- DATABASE LOGIC ---
-mongo = AsyncIOMotorClient(MONGO_URL)
-db = mongo[DB_NAME]
-users_col = db["users"]
-chats_col = db["chats"]
+# --- DATABASE VARIABLES (Lazily loaded) ---
+mongo = None
+db = None
+users_col = None
+chats_col = None
 
 async def add_user(user_id, name="Unknown"):
     try:
@@ -549,6 +535,35 @@ async def broadcast_handler(client, message):
 ━━━━━━━━━━━━━━━━━
 """)
 
+# --- MAIN RUNNER (Fixed for Render & Asyncio) ---
+async def main():
+    global mongo, db, users_col, chats_col
+    
+    # Start Flask Server in Background
+    t1 = threading.Thread(target=run_flask, daemon=True)
+    t1.start()
+    
+    # Start Keep-Alive Pinger in Background
+    t2 = threading.Thread(target=keep_alive, daemon=True)
+    t2.start()
+
+    # Safely Initialize DB inside the active event loop
+    mongo = AsyncIOMotorClient(MONGO_URL)
+    db = mongo[DB_NAME]
+    users_col = db["users"]
+    chats_col = db["chats"]
+
+    # Start Bot
+    print("🚀 Starting Bot...")
+    await bot.start()
+    print("✅ Bot is online and running successfully!")
+    
+    # Keep the bot running
+    from pyrogram import idle
+    await idle()
+    
+    await bot.stop()
+
 if __name__ == "__main__":
-    print("Bot Starting...")
-    bot.run()
+    # Use asyncio.run() properly for Python 3.10+ compatibility on Render
+    asyncio.run(main())

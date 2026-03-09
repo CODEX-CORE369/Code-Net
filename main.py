@@ -41,10 +41,7 @@ def run_flask():
     app.run(host="0.0.0.0", port=port)
 
 def keep_alive():
-    # To prevent NameError for the 'B' variable in your print statement
     B = "INFO" 
-    
-    # Modified to support Render external URL dynamically
     port = int(os.environ.get('PORT', 8080))
     URL = os.environ.get('RENDER_EXTERNAL_URL', f"http://localhost:{port}")
     while True:
@@ -139,6 +136,7 @@ async def start_handler(client, message):
 ┃ ┃ 📌 <b>ʀᴇᴍᴏᴠᴇ ᴊᴏɪɴ/ʟᴇᴀᴠᴇ/ᴘɪɴ</b>
 ┃ ┃ 🔊 <b>ᴠᴏɪᴄᴇ ᴄʜᴀᴛ ʟᴏɢ ᴄʟᴇᴀɴᴇʀ</b>
 ┃ ┃ 🚀 <b>ғᴀsᴛ ʙᴏᴛ</b>
+┃ ┃ 🚫 <b>ᴀɴᴛɪ ʟɪɴᴋ sʏsᴛᴇᴍ</b>
 ┃ ┗───────────╼
 ┗━━━━━━━━━━┛
 """
@@ -237,6 +235,43 @@ async def delete_service(client, message):
         await message.delete()
     except Exception:
         pass 
+
+# --- ANTI-LINK SYSTEM ---
+@bot.on_message(filters.group & (filters.text | filters.caption) & ~filters.service)
+async def anti_link(client, message):
+    has_link = False
+    
+    if message.entities:
+        for ent in message.entities:
+            if ent.type in [enums.MessageEntityType.URL, enums.MessageEntityType.TEXT_LINK]:
+                has_link = True
+                break
+    if message.caption_entities and not has_link:
+        for ent in message.caption_entities:
+            if ent.type in [enums.MessageEntityType.URL, enums.MessageEntityType.TEXT_LINK]:
+                has_link = True
+                break
+                
+    if has_link:
+        user = message.from_user
+        sender_chat = message.sender_chat
+        
+        # Ignore if sent by anonymous group admin or channel
+        if sender_chat:
+            return
+        
+        # Ignore bot owners
+        if user and user.id in OWNER_IDS:
+            return
+            
+        try:
+            # Check user privileges
+            member = await client.get_chat_member(message.chat.id, user.id)
+            if member.status not in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
+                await message.delete()
+        except Exception:
+            # If user not found or bot lacks permission, ignore silently
+            pass
 
 # --- CHAT MEMBER UPDATED (PROMOTION DETECTOR) ---
 @bot.on_chat_member_updated(filters.group)
@@ -399,6 +434,18 @@ async def broadcast_logic(chat_id, msg, do_pin, custom_text=None, custom_markup=
                 kwargs["reply_markup"] = custom_markup
                 
             sent_msg = await bot.copy_message(**kwargs)
+        elif msg.media:
+            # Handles sending /broadcast directly attached to an image, video, or doc
+            kwargs = {
+                "chat_id": chat_id,
+                "from_chat_id": msg.chat.id,
+                "message_id": msg.id,
+                "parse_mode": enums.ParseMode.HTML
+            }
+            kwargs["caption"] = custom_text
+            if custom_markup:
+                kwargs["reply_markup"] = custom_markup
+            sent_msg = await bot.copy_message(**kwargs)
         else:
             sent_msg = await bot.send_message(
                 chat_id=chat_id,
@@ -425,12 +472,18 @@ async def broadcast_logic(chat_id, msg, do_pin, custom_text=None, custom_markup=
 
 @bot.on_message(filters.command("broadcast") & filters.user(OWNER_IDS))
 async def broadcast_handler(client, message):
-    if not message.reply_to_message and len(message.command) < 2:
-        return await message.reply_text("<b>⚠️ Usage:</b> Reply to a message or use <code>/broadcast (pin) (group/user) Text [Btn|Url]</code>")
+    if not message.reply_to_message and len(message.command) < 2 and not message.media:
+        return await message.reply_text("<b>⚠️ Usage:</b> Reply to a message or use <code>/broadcast (pin) (group/user) Text [Btn|Url]</code> or send media with command in caption.")
 
     status = await message.reply_text("<b>🚀 ʙʀᴏᴀᴅᴄᴀsᴛ sᴛᴀʀᴛɪɴɢ...</b>")
     
-    raw_text = getattr(message.text, "html", message.text) if message.text else ""
+    # Extracting text from either message or caption
+    if message.text:
+        raw_text = message.text.html
+    elif message.caption:
+        raw_text = message.caption.html
+    else:
+        raw_text = ""
     
     do_pin = "(pin)" in raw_text.lower()
     target_group = "(group)" in raw_text.lower()

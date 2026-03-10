@@ -1,7 +1,5 @@
-pyrogram
-tgcrypto
-motor
-pymongo
-Flask
-aiohttp
-gunicorn
+Flask==3.0.0
+pyrogram==2.0.106
+TgCrypto==1.2.5
+motor==3.3.1
+requests==2.31.0

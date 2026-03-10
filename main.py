@@ -1,10 +1,11 @@
 import os
 import re
 import asyncio
+import time
 import io
 import threading
+import requests
 import logging
-import aiohttp
 from flask import Flask
 from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -25,7 +26,7 @@ MONGO_URL = "mongodb+srv://dxsimu:mnbvcxzdx@dxsimu.0qrxmsr.mongodb.net/?appName=
 DB_NAME = "DX-REMOVE"
 
 # --- LOGGING SETUP ---
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- FLASK SERVER (KEEP ALIVE) ---
@@ -36,32 +37,37 @@ def home():
     return "🔥 DX Bot Service is Online & High Performance! 🔥"
 
 def run_flask():
+    # Render assigns PORT env var, default to 8080 if not found
     port = int(os.environ.get("PORT", 8080))
-    # Flask এর অপ্রয়োজনীয় লগস বন্ধ করা হলো যাতে কনসোল পরিষ্কার থাকে
-    log = logging.getLogger('werkzeug')
-    log.setLevel(logging.ERROR)
     app.run(host="0.0.0.0", port=port)
 
-async def keep_alive():
-    """Async loop to ping the server and keep it awake on free hosts like Render."""
+def keep_alive():
+    """Modified to support Render external URL dynamically"""
+    B = "DX-BOT" # Added to prevent NameError
     port = int(os.environ.get('PORT', 8080))
-    url = os.environ.get('RENDER_EXTERNAL_URL', f"http://localhost:{port}")
+    URL = os.environ.get('RENDER_EXTERNAL_URL', f"http://localhost:{port}")
     while True:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    logger.info(f"Pinged self ({url}) - Status: {response.status}")
+            requests.get(URL)
+            print(f"[{B}] Pinging server ({URL}) to stay awake...")
         except Exception as e:
-            logger.error(f"Keep-alive ping failed: {e}")
-        await asyncio.sleep(300) # Wait 5 minutes before pinging again
+            print(f"[{B}] Ping failed: {e}")
+        time.sleep(300)
 
-# --- DATABASE VARIABLES ---
+# Start Background Threads (Fixed with daemon=True to prevent hanging)
+t1 = threading.Thread(target=run_flask, daemon=True)
+t1.start()
+t2 = threading.Thread(target=keep_alive, daemon=True)
+t2.start()
+
+# --- DATABASE LOGIC (OPTIMIZED & UPDATED WITH NAMES) ---
 mongo = AsyncIOMotorClient(MONGO_URL)
 db = mongo[DB_NAME]
 users_col = db["users"]
 chats_col = db["chats"]
 
 async def add_user(user_id, name="Unknown"):
+    """Upsert user to DB (Faster & Safer)"""
     try:
         await users_col.update_one(
             {"user_id": user_id},
@@ -72,6 +78,7 @@ async def add_user(user_id, name="Unknown"):
         logger.error(f"DB Error (User): {e}")
 
 async def add_chat(chat_id, name="Unknown Group"):
+    """Upsert group to DB"""
     try:
         await chats_col.update_one(
             {"chat_id": chat_id},
@@ -82,11 +89,19 @@ async def add_chat(chat_id, name="Unknown Group"):
         logger.error(f"DB Error (Chat): {e}")
 
 async def remove_target(target_id):
+    """Safely remove a user or group if blocked/kicked"""
     await users_col.delete_one({"user_id": target_id})
     await chats_col.delete_one({"chat_id": target_id})
 
 async def get_all_ids(collection):
-    return [doc.get("user_id") or doc.get("chat_id") async for doc in collection.find()]
+    # Fixed async comprehension for maximum compatibility
+    ids = []
+    async for doc in collection.find():
+        if "user_id" in doc:
+            ids.append(doc["user_id"])
+        elif "chat_id" in doc:
+            ids.append(doc["chat_id"])
+    return ids
 
 # --- FANCY FONT ENGINE ---
 def to_fancy(text):
@@ -96,6 +111,7 @@ def to_fancy(text):
     return text.translate(table)
 
 # --- BOT CLIENT ---
+# Added in_memory=True to prevent sqlite database lock errors on Render
 bot = Client(
     "DxServiceRemover",
     api_id=API_ID,
@@ -104,21 +120,22 @@ bot = Client(
     in_memory=True
 )
 
-
-# =================================================================
-# 🛑 DO NOT MODIFY BELOW (START COMMAND & SERVICE SYSTEM AS REQUESTED)
-# =================================================================
-
+# --- START HANDLER ---
 @bot.on_message(filters.command("start") & filters.private)
 async def start_handler(client, message):
     user = message.from_user
     fname = user.first_name if user.first_name else "User"
+    
+    # Preventing HTML parse errors
     fname_safe = fname.replace("<", "&lt;").replace(">", "&gt;").replace("&", "&amp;")
     await add_user(user.id, fname_safe)
     
     fancy_name = to_fancy(fname_safe)
+    
+    # Notification Trigger (Hidden Mention)
     mention = f"<a href='tg://user?id={user.id}'>{fancy_name}</a>"
     
+    # Advanced Dashboard Design
     text = f"""
 ┏━━「 <b>ᴅᴀsʜʙᴏᴀʀᴅ</b> 」━━┓
 ┃ ┏─「 <b>ᴜsᴇʀ ᴘʀᴏғɪʟᴇ</b> 」
@@ -131,7 +148,6 @@ async def start_handler(client, message):
 ┃ ┃ 📌 <b>ʀᴇᴍᴏᴠᴇ ᴊᴏɪɴ/ʟᴇᴀᴠᴇ/ᴘɪɴ</b>
 ┃ ┃ 🔊 <b>ᴠᴏɪᴄᴇ ᴄʜᴀᴛ ʟᴏɢ ᴄʟᴇᴀɴᴇʀ</b>
 ┃ ┃ 🚀 <b>ғᴀsᴛ ʙᴏᴛ</b>
-┃ ┃ 🚫 <b>ᴀɴᴛɪ ʟɪɴᴋ sʏsᴛᴇᴍ</b>
 ┃ ┗───────────╼
 ┗━━━━━━━━━━┛
 """
@@ -149,46 +165,22 @@ async def start_handler(client, message):
         disable_web_page_preview=True
     )
 
-@bot.on_message(
-    (
-        filters.service | 
-        filters.pinned_message | 
-        filters.new_chat_members | 
-        filters.left_chat_member | 
-        filters.chat_joined_by_request | 
-        filters.video_chat_started | 
-        filters.video_chat_ended | 
-        filters.video_chat_members_invited | 
-        filters.video_chat_scheduled | 
-        filters.message_auto_delete_timer_changed |
-        filters.forum_topic_created |
-        filters.forum_topic_closed |
-        filters.forum_topic_reopened |
-        filters.forum_topic_edited |
-        filters.general_forum_topic_hidden |
-        filters.general_forum_topic_unhidden |
-        filters.giveaway_created |
-        filters.giveaway_winners_announced |
-        filters.boost_added |
-        filters.successful_payment |
-        filters.refunded_payment |
-        filters.proximity_alert_triggered |
-        filters.write_access_allowed |
-        filters.migrate_to_chat_id |
-        filters.migrate_from_chat_id
-    ) & filters.group
-    )
+# --- SERVICE MESSAGE REMOVER & GROUP WELCOME LOGIC ---
+@bot.on_message(filters.service & filters.group)
 async def delete_service(client, message):
     chat_title = message.chat.title if message.chat.title else "Unknown Group"
+    # Preventing HTML parse errors for group titles
     chat_title_safe = chat_title.replace("<", "&lt;").replace(">", "&gt;").replace("&", "&amp;")
     
     await add_chat(message.chat.id, chat_title_safe)
     
+    # When Bot is added to a new group
     if message.new_chat_members:
         me = await client.get_me()
         for member in message.new_chat_members:
             if member.id == me.id:
                 member_info = await client.get_chat_member(message.chat.id, me.id)
+                # Checking if bot has delete messages permission
                 if member_info.privileges and member_info.privileges.can_delete_messages:
                     welcome_text = f"""
 <b>┏━━「 ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ɢʀᴏᴜᴘ 」━━┓
@@ -223,53 +215,32 @@ async def delete_service(client, message):
 """
                     btn = InlineKeyboardMarkup([[InlineKeyboardButton("👑 ᴘʀᴏᴍᴏᴛᴇ ᴀs ᴀᴅᴍɪɴ 👑", url=f"https://t.me/{me.username}?startgroup=true&admin=delete_messages+invite_users")]])
                     warn_msg = await message.reply_text(warning_text, reply_markup=btn, parse_mode=enums.ParseMode.HTML)
+                    
+                    # Saving warning message id to delete it later when promoted
                     await chats_col.update_one({"chat_id": message.chat.id}, {"$set": {"warning_msg_id": warn_msg.id}}, upsert=True)
 
+    # Delete the service message (Includes join requests accepted messages)
     try:
         await message.delete()
     except Exception:
-        pass 
-
-# =================================================================
-# ⬆️ UNTOUCHED CODE ENDS HERE
-# =================================================================
-
-
-# --- ANTI-LINK SYSTEM (Optimized) ---
-@bot.on_message(filters.group & (filters.text | filters.caption) & ~filters.service)
-async def anti_link(client, message):
-    text_entities = message.entities or message.caption_entities or []
-    has_link = any(ent.type in [enums.MessageEntityType.URL, enums.MessageEntityType.TEXT_LINK] for ent in text_entities)
-                
-    if has_link:
-        user = message.from_user
-        
-        # ইগনোর চ্যানেল বা এনোনিমাস এডমিন
-        if message.sender_chat or (user and user.id in OWNER_IDS):
-            return
-            
-        try:
-            # চ্যাট মেম্বারের প্রিভিলেজ চেক করা হচ্ছে
-            member = await client.get_chat_member(message.chat.id, user.id)
-            if member.status not in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
-                await message.delete()
-        except Exception:
-            pass
+        pass # Bot doesn't have delete permission
 
 # --- CHAT MEMBER UPDATED (PROMOTION DETECTOR) ---
 @bot.on_chat_member_updated(filters.group)
-async def chat_member_update(client, update):
+async def chat_member_update(client, chat_member_updated):
     me = await client.get_me()
     
-    if update.new_chat_member and update.new_chat_member.user.id == me.id:
-        new_status = update.new_chat_member.status
-        old_status = update.old_chat_member.status if update.old_chat_member else None
+    if chat_member_updated.new_chat_member and chat_member_updated.new_chat_member.user.id == me.id:
+        new_status = chat_member_updated.new_chat_member.status
+        old_status = chat_member_updated.old_chat_member.status if chat_member_updated.old_chat_member else None
         
+        # If bot was promoted to Admin
         if new_status == enums.ChatMemberStatus.ADMINISTRATOR and old_status != enums.ChatMemberStatus.ADMINISTRATOR:
-            chat_id = update.chat.id
-            chat_title_safe = (update.chat.title or "Unknown Group").replace("<", "&lt;").replace(">", "&gt;").replace("&", "&amp;")
+            chat_id = chat_member_updated.chat.id
+            chat_title = chat_member_updated.chat.title if chat_member_updated.chat.title else "Unknown Group"
+            chat_title_safe = chat_title.replace("<", "&lt;").replace(">", "&gt;").replace("&", "&amp;")
             
-            # আগের ওয়ার্নিং মেসেজ ডিলিট করা হচ্ছে
+            # Delete old warning message if exists
             chat_data = await chats_col.find_one({"chat_id": chat_id})
             if chat_data and "warning_msg_id" in chat_data:
                 try:
@@ -278,32 +249,37 @@ async def chat_member_update(client, update):
                 except:
                     pass
             
+            # Send Final Welcome
             welcome_text = f"""
 <b>┏━━「 ᴘᴇʀᴍɪssɪᴏɴ ɢʀᴀɴᴛᴇᴅ 」━━┓
 ┃
 ┃ ✅ ᴛʜᴀɴᴋ ʏᴏᴜ ғᴏʀ ᴘʀᴏᴍᴏᴛɪɴɢ ᴍᴇ!
 ┃ 
 ┃ 🗑 ɴᴏᴡ ɪ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴅᴇʟᴇᴛᴇ:
-┃ ┣ 📌 ᴘɪɴɴᴇᴅ/ᴊᴏɪɴ/ʟᴇᴀᴠᴇ ᴍᴇssᴀɢᴇs
+┃ ┣ 📌 ᴘɪɴɴᴇᴅ/ɪᴏɪɴ/ʟᴇᴀᴠᴇ ᴍᴇssᴀɢᴇs
 ┃ ┣ ⏳ ᴀᴜᴛᴏ-ᴅᴇʟᴇᴛᴇ ᴛɪᴍᴇʀ ʟᴏɢs
 ┃ ┗ 🔊 ᴠᴏɪᴄᴇ ᴄʜᴀᴛ ʟᴏɢs
 ┃
 ┃ 🚀 ʀᴇᴀᴅʏ ᴛᴏ ᴋᴇᴇᴘ <b>{chat_title_safe}</b> ᴄʟᴇᴀɴ!
 ┗━━━━━━━━━━━━━━━━┛</b>
 """
-            try:
-                await client.send_message(chat_id, welcome_text, parse_mode=enums.ParseMode.HTML)
-            except Exception:
-                pass
+            await client.send_message(chat_id, welcome_text, parse_mode=enums.ParseMode.HTML)
 
-# --- STATS COMMAND (Optimized Output) ---
+# --- STATS COMMAND (UPDATED WITH NAMES) ---
 @bot.on_message(filters.command("users") & filters.user(OWNER_IDS))
 async def stats_handler(client, message):
     status = await message.reply_text("<b>♻️ ᴘʀᴏᴄᴇssɪɴɢ ᴅᴀᴛᴀʙᴀsᴇ...</b>")
     
-    users = [f"{doc.get('user_id')} | {doc.get('name', 'Unknown')}" async for doc in users_col.find()]
-    chats = [f"{doc.get('chat_id')} | {doc.get('name', 'Unknown')}" async for doc in chats_col.find()]
+    # Fixed async list creation for best compatibility
+    users = []
+    async for doc in users_col.find():
+        users.append(f"{doc.get('user_id')} | {doc.get('name', 'Unknown')}")
+        
+    chats = []
+    async for doc in chats_col.find():
+        chats.append(f"{doc.get('chat_id')} | {doc.get('name', 'Unknown')}")
     
+    # File Generation with both Users and Groups Names
     out_text = f"--- DX BOT DATABASE ---\n\nTOTAL USERS: {len(users)}\nTOTAL GROUPS: {len(chats)}\n\n--- USER LIST ---\n"
     out_text += "\n".join(users)
     out_text += "\n\n--- GROUP LIST ---\n"
@@ -322,137 +298,110 @@ async def stats_handler(client, message):
     await message.reply_document(document=bio, caption=caption, parse_mode=enums.ParseMode.HTML)
     await status.delete()
 
-# --- NEW ADVANCED IMPORT SYSTEM ---
-@bot.on_message(filters.command("import") & filters.user(OWNER_IDS))
-async def import_handler(client, message):
-    doc = message.reply_to_message.document if message.reply_to_message and message.reply_to_message.document else message.document
-        
-    if not doc or not doc.file_name.endswith('.txt'):
-        return await message.reply_text("<b>⚠️ ᴘʟᴇᴀsᴇ ʀᴇᴘʟʏ ᴛᴏ ᴀ .txt ғɪʟᴇ ᴏʀ sᴇɴᴅ ᴡɪᴛʜ /import ᴄᴀᴘᴛɪᴏɴ.</b>")
-    
-    status = await message.reply_text("<b>📥 ɪᴍᴘᴏʀᴛɪɴɢ ᴅᴀᴛᴀ... ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ.</b>")
-    
-    file_path = await client.download_media(doc, in_memory=True)
-    content = file_path.getvalue().decode('utf-8')
-    
-    raw_ids = re.findall(r"-?\d+", content)
-    total, success, exists, failed = len(raw_ids), 0, 0, 0
-    
-    for cid_str in raw_ids:
-        try:
-            cid = int(cid_str)
-            col = chats_col if cid < 0 else users_col
-            name = "Imported Group" if cid < 0 else "Imported User"
-            
-            if await col.find_one({"chat_id" if cid < 0 else "user_id": cid}):
-                exists += 1
-            else:
-                await (add_chat(cid, name) if cid < 0 else add_user(cid, name))
-                success += 1
-        except Exception:
-            failed += 1
-            
-    await status.edit_text(f"""
-<b>✅ ɪᴍᴘᴏʀᴛ ᴄᴏᴍᴘʟᴇᴛᴇᴅ</b>
-━━━━━━━━━━━━━━━━━
-👤 <b>ᴛᴏᴛᴀʟ ɪᴅs ғᴏᴜɴᴅ:</b> {total}
-✅ <b>sᴜᴄᴄᴇssғᴜʟʟʏ sᴀᴠᴇᴅ:</b> {success}
-⚠️ <b>ᴀʟʀᴇᴀᴅʏ ᴇxɪsᴛs:</b> {exists}
-❌ <b>ғᴀɪʟᴇᴅ/ɪɴᴠᴀʟɪᴅ:</b> {failed}
-━━━━━━━━━━━━━━━━━
-""")
-
-# --- ADVANCED BROADCAST & BUTTON PARSER ---
+# --- ADVANCED BROADCAST ---
 def parse_btn(text):
     if not text: return None, ""
-    clean_lines, rows = [], []
+    pattern = r"\[([^\|\]]+)\|\s*([^\]]+)\]"
+    matches = re.findall(pattern, text)
+    clean_text = re.sub(pattern, "", text).strip()
     
-    for line in text.split('\n'):
-        matches = re.findall(r"\[([^\|\]]+)\|\s*([^\]]+)\]", line)
-        if matches:
-            rows.append([InlineKeyboardButton(txt.strip(), url=url.strip()) for txt, url in matches])
-            clean_line = re.sub(r"\[([^\|\]]+)\|\s*([^\]]+)\]", "", line).strip()
-            if clean_line:
-                clean_lines.append(clean_line)
-        else:
-            clean_lines.append(line)
-            
-    return InlineKeyboardMarkup(rows) if rows else None, '\n'.join(clean_lines).strip()
+    if not matches: return None, clean_text
+    
+    rows = []
+    temp = []
+    for txt, url in matches:
+        temp.append(InlineKeyboardButton(txt.strip(), url=url.strip()))
+        if len(temp) == 2:
+            rows.append(temp)
+            temp = []
+    if temp: rows.append(temp)
+    return InlineKeyboardMarkup(rows), clean_text
 
-async def broadcast_logic(chat_id, msg, do_pin, custom_text=None, custom_markup=None, override_caption=False):
+# --- IMPROVED BROADCAST SYSTEM (FIXED HTML & GROUP SUPPORT) ---
+
+async def broadcast_logic(chat_id, msg):
+    """Handles broadcasting to both Users and Groups with full HTML support"""
     try:
-        sent_msg = None
+        # If it's a reply, use copy_message to preserve media and HTML entities
         if msg.reply_to_message:
-            kwargs = {"chat_id": chat_id, "from_chat_id": msg.chat.id, "message_id": msg.reply_to_message.id, "parse_mode": enums.ParseMode.HTML}
-            if override_caption:
-                kwargs.update({"caption": custom_text, "reply_markup": custom_markup})
-            sent_msg = await bot.copy_message(**kwargs)
-        elif msg.media:
-            kwargs = {"chat_id": chat_id, "from_chat_id": msg.chat.id, "message_id": msg.id, "parse_mode": enums.ParseMode.HTML, "caption": custom_text}
-            if custom_markup: kwargs["reply_markup"] = custom_markup
-            sent_msg = await bot.copy_message(**kwargs)
+            reply = msg.reply_to_message
+            
+            # Check if owner provided a custom caption with the command
+            if len(msg.command) > 1:
+                # Re-extracting the raw text to keep HTML tags intact safely
+                full_text = getattr(msg.text, "html", msg.text) if msg.text else ""
+                raw_cap = full_text.split(None, 1)[1] if len(full_text.split(None, 1)) > 1 else ""
+                markup, clean_cap = parse_btn(raw_cap)
+            else:
+                # Use original message's HTML caption/text safely
+                clean_cap = getattr(reply.caption, "html", reply.caption) if reply.caption else (getattr(reply.text, "html", reply.text) if reply.text else "")
+                markup = reply.reply_markup
+            
+            await bot.copy_message(
+                chat_id=chat_id,
+                from_chat_id=msg.chat.id,
+                message_id=reply.id,
+                caption=clean_cap,
+                reply_markup=markup,
+                parse_mode=enums.ParseMode.HTML
+            )
         else:
-            sent_msg = await bot.send_message(chat_id=chat_id, text=custom_text, reply_markup=custom_markup, parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
+            # Simple text broadcast from the command itself safely
+            full_text = getattr(msg.text, "html", msg.text) if msg.text else ""
+            raw_txt = full_text.split(None, 1)[1] if len(full_text.split(None, 1)) > 1 else ""
+            markup, clean_txt = parse_btn(raw_txt)
             
-        if do_pin and sent_msg:
-            try: await bot.pin_chat_message(chat_id, sent_msg.id)
-            except: pass
-            
-        await asyncio.sleep(0.05) # Rate Limit Protection (20 msg/sec approx)
+            await bot.send_message(
+                chat_id=chat_id,
+                text=clean_txt,
+                reply_markup=markup,
+                parse_mode=enums.ParseMode.HTML,
+                disable_web_page_preview=True
+            )
         return "OK"
     except FloodWait as e:
-        await asyncio.sleep(e.value + 1)
-        return await broadcast_logic(chat_id, msg, do_pin, custom_text, custom_markup, override_caption)
+        await asyncio.sleep(e.value)
+        return await broadcast_logic(chat_id, msg)
     except (InputUserDeactivated, UserIsBlocked, PeerIdInvalid):
-        await remove_target(chat_id)
+        await remove_target(chat_id) # Fixed to remove from both DBs appropriately
         return "BLOCK"
-    except Exception:
+    except Exception as e:
+        logger.error(f"Broadcast Error for {chat_id}: {e}")
         return "FAIL"
 
 @bot.on_message(filters.command("broadcast") & filters.user(OWNER_IDS))
 async def broadcast_handler(client, message):
-    if not message.reply_to_message and len(message.command) < 2 and not message.media:
-        return await message.reply_text("<b>⚠️ Usage:</b> Reply to a message or use <code>/broadcast (pin) (group/user) Text [Btn|Url]</code> or send media with command in caption.")
+    if not message.reply_to_message and len(message.command) < 2:
+        return await message.reply_text("<b>⚠️ Usage:</b> Reply to a message or use <code>/broadcast Text [Btn|Url]</code>")
 
     status = await message.reply_text("<b>🚀 ʙʀᴏᴀᴅᴄᴀsᴛ sᴛᴀʀᴛɪɴɢ...</b>")
-    raw_text = message.text.html if message.text else (message.caption.html if message.caption else "")
     
-    do_pin, target_group, target_user = "(pin)" in raw_text.lower(), "(group)" in raw_text.lower(), "(user)" in raw_text.lower()
-    target_type = "group" if target_group and not target_user else ("user" if target_user and not target_group else "all")
-
-    clean_raw_text = re.sub(r"(?i)\((pin|group|user)\)", "", raw_text)
-    clean_raw_text = re.sub(r"^/broadcast\s*", "", clean_raw_text).strip()
+    # Fetching both Users and Groups from DB
+    users = await get_all_ids(users_col)
+    chats = await get_all_ids(chats_col)
+    all_targets = list(set(users + chats)) # Combining both and removing duplicates
     
-    custom_markup, custom_text = parse_btn(clean_raw_text)
-    override_caption = bool(custom_text or custom_markup)
-
-    all_targets = set()
-    if target_type in ["user", "all"]:
-        all_targets.update(await get_all_ids(users_col))
-    if target_type in ["group", "all"]:
-        all_targets.update(await get_all_ids(chats_col))
-        
-    all_targets = list(all_targets)
     total = len(all_targets)
     stats = {"OK": 0, "BLOCK": 0, "FAIL": 0}
     
     for i, chat_id in enumerate(all_targets):
-        res = await broadcast_logic(chat_id, message, do_pin, custom_text, custom_markup, override_caption)
+        res = await broadcast_logic(chat_id, message)
         stats[res] += 1
         
-        if (i + 1) % 20 == 0 or (i + 1) == total:
+        # UI update every 15 targets
+        if (i + 1) % 15 == 0 or (i + 1) == total:
             try:
                 await status.edit_text(
                     f"<b>🚀 ʙʀᴏᴀᴅᴄᴀsᴛɪɴɢ...</b>\n\n"
                     f"<b>📊 Progress:</b> <code>{i+1}/{total}</code>\n"
                     f"<b>✅ Success:</b> <code>{stats['OK']}</code>\n"
-                    f"<b>🚫 Blocked/Removed:</b> <code>{stats['BLOCK']}</code>\n"
+                    f"<b>🚫 Blocked:</b> <code>{stats['BLOCK']}</code>\n"
                     f"<b>❌ Failed:</b> <code>{stats['FAIL']}</code>"
                 )
-            except FloodWait as e:
-                await asyncio.sleep(e.value)
+            except: pass
 
-    await status.edit_text(f"""
+    await status.edit_text(
+        f"""
 <b>✅ ʙʀᴏᴀᴅᴄᴀsᴛ ᴄᴏᴍᴘʟᴇᴛᴇᴅ</b>
 ━━━━━━━━━━━━━━━━━
 👤 <b>ᴛᴏᴛᴀʟ ᴛᴀʀɢᴇᴛs:</b> {total}
@@ -460,27 +409,9 @@ async def broadcast_handler(client, message):
 🚫 <b>ʀᴇᴍᴏᴠᴇᴅ/ʙʟᴏᴄᴋᴇᴅ:</b> {stats['BLOCK']}
 ❌ <b>ғᴀɪʟᴇᴅ/ᴇʀʀᴏʀ:</b> {stats['FAIL']}
 ━━━━━━━━━━━━━━━━━
-""")
-
-# --- MAIN RUNNER ---
-async def main():
-    # ফ্লাস্ক সার্ভার ব্যাকগ্রাউন্ড থ্রেডে চালানো হচ্ছে
-    t1 = threading.Thread(target=run_flask, daemon=True)
-    t1.start()
-    
-    # অ্যাসিঙ্ক পিঙ্গার টাস্ক রান করানো হচ্ছে (No thread blocking)
-    asyncio.create_task(keep_alive())
-
-    print("🚀 Starting Bot...")
-    await bot.start()
-    print("✅ Bot is online and running successfully!")
-    
-    from pyrogram import idle
-    await idle()
-    await bot.stop()
+"""
+    )
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Bot stopped by user.")
+    print("Bot Starting...")
+    bot.run()
